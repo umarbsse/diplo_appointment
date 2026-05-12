@@ -1,0 +1,9 @@
+﻿{
+  "name": "com.url_guard.processor",
+  "description": "URL Guard Python image processor",
+  "path": "F:/projects/Google Chrome/diplo_appoino/native-host/run_host.bat",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://aamaoekfaegigboedckpjekngjcjbfeg/"
+  ]
+}

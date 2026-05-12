@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Element Source Viewer Options</title>
+    <link rel="stylesheet" href="options.css">
+  </head>
+  <body>
+    <main class="settings-card">
+      <h1>URL Guard Element Source Viewer</h1>
+      <p class="description">The extension reads one configured element only when the active tab URL matches your safe URL rule.</p>
+
+      <form id="optionsForm" novalidate>
+        <label for="urlRule">Allowed URL rule</label>
+        <input id="urlRule" name="urlRule" type="text" autocomplete="off" placeholder="https://example.com/*" required>
+        <p class="hint">Allowed: http(s) URLs and leading host wildcards, for example <code>https://*.example.com/orders/*</code>.</p>
+
+        <label for="formId">Form ID</label>
+        <input id="formId" name="formId" type="text" autocomplete="off" placeholder="checkoutForm" required>
+        <p class="hint">Enter only the id value, without <code>#</code>. Example: <code>loginForm</code>.</p>
+
+        <label for="elementSelector">HTML tag or selector inside the form</label>
+        <input id="elementSelector" name="elementSelector" type="text" autocomplete="off" placeholder="input[name=&quot;email&quot;]" required>
+        <p class="hint">Examples: <code>input</code>, <code>textarea</code>, <code>select[name=&quot;country&quot;]</code>, <code>button[type=&quot;submit&quot;]</code>.</p>
+
+        <div class="actions">
+          <button class="primary-button" type="submit">Save</button>
+          <button id="clearButton" class="secondary-button" type="button">Clear</button>
+        </div>
+      </form>
+
+      <p id="message" class="message" role="status"></p>
+    </main>
+
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "URL Guard Element Source Viewer",
+  "description": "Automatically extracts a configured background image, saves it, sends it to a Python Native Messaging host, and stores the response.",
+  "version": "1.4.0",
+  "minimum_chrome_version": "114",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "tabs",
+    "downloads",
+    "nativeMessaging"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Element Source Viewer",
+    "default_popup": "src/popup.html"
+  },
+  "options_page": "src/options.html"
+}

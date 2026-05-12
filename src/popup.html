@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Element Source Viewer</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="header">
+        <div>
+          <h1>Element Source</h1>
+          <p id="status" class="status">Checking current tab...</p>
+        </div>
+        <button id="optionsButton" class="secondary-button" type="button">Options</button>
+      </header>
+
+      <section class="meta" aria-label="Current extraction details">
+        <div>
+          <span class="label">Configured rule</span>
+          <code id="ruleValue">Not configured</code>
+        </div>
+        <div>
+          <span class="label">Target</span>
+          <code id="targetValue">Not configured</code>
+        </div>
+        <div>
+          <span class="label">Active URL</span>
+          <code id="activeUrl">Unknown</code>
+        </div>
+      </section>
+
+      <div class="actions">
+        <button id="refreshButton" class="primary-button" type="button">Refresh element</button>
+        <button id="copyButton" class="secondary-button" type="button" disabled>Copy</button>
+      </div>
+
+      <section class="field-group saved-input-group" aria-label="Saved custom input">
+        <label for="savedInput">Input name to fill</label>
+        <input id="savedInput" type="text" autocomplete="off" placeholder="Example: value_of_input. Saves automatically and fills Python response.">
+      </section>
+
+      <section class="field-group" aria-label="Target element source">
+        <label for="sourceTextarea">Target element page source</label>
+        <textarea id="sourceTextarea" spellcheck="false" placeholder="Target element HTML appears here when the active tab matches your URL rule." readonly></textarea>
+      </section>
+
+      <section class="field-group" aria-label="Python processor response">
+        <label for="pythonResponseTextarea">Python response</label>
+        <textarea id="pythonResponseTextarea" class="python-response" spellcheck="false" placeholder="Python Native Messaging response appears here after the image is saved and processed." readonly></textarea>
+      </section>
+    </main>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
