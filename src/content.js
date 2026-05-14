@@ -1,27 +1,41 @@
 (function () {
   const DEFAULT_CONFIG = {
     urlRule: '',
+    urlRules: [],
     formId: '',
     elementSelector: ''
   };
 
-  function matchesConfiguredRule(candidateUrl, rule) {
-    const url = String(candidateUrl || '');
-    const pattern = String(rule || '').trim();
+  function matchesConfiguredRule(candidateUrl, ruleOrRules) {
+    const rule = Array.isArray(ruleOrRules) ? normalizeUrlRules(ruleOrRules)[0] : String(ruleOrRules || '').trim();
 
-    if (!url || !pattern) {
+    if (!candidateUrl || !rule || !/^https?:\/\//i.test(rule)) {
       return false;
     }
 
-    if (!/^https?:\/\//i.test(url) || !/^https?:\/\//i.test(pattern)) {
+    try {
+      const current = new URL(candidateUrl);
+      const configured = new URL(rule);
+      const configuredPath = configured.pathname || '/';
+
+      if (current.protocol.toLowerCase() !== configured.protocol.toLowerCase()) return false;
+      if (current.hostname.toLowerCase() !== configured.hostname.toLowerCase()) return false;
+
+      const escapedPath = configuredPath
+        .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+        .replaceAll('*', '.*');
+
+      return new RegExp(`^${escapedPath}$`, 'i').test(current.pathname || '/');
+    } catch {
       return false;
     }
+  }
 
-    const escaped = pattern
-      .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
-      .replaceAll('*', '.*');
-
-    return new RegExp(`^${escaped}$`, 'i').test(url);
+  function normalizeUrlRules(value) {
+    const values = Array.isArray(value) ? value : [value];
+    return values
+      .map((item) => String(item || '').trim())
+      .filter(Boolean);
   }
 
   function extractBackgroundUrl(styleValue) {
@@ -75,7 +89,14 @@
   }
 
   async function getConfig() {
-    return chrome.storage.sync.get(DEFAULT_CONFIG);
+    const config = await chrome.storage.sync.get(DEFAULT_CONFIG);
+    const urlRules = normalizeUrlRules(config.urlRules);
+    const urlRule = String(config.urlRule || '').trim() || urlRules[0] || '';
+    return {
+      ...config,
+      urlRule,
+      urlRules: urlRule ? [urlRule] : []
+    };
   }
 
   async function runAutoProcessing() {

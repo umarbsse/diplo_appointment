@@ -1,5 +1,7 @@
 import { getConfig, matchesConfiguredRule, toDisplaySelector, validateConfig } from './config.js';
 
+const USE_CHROME_DOWNLOADS = false; // false avoids Chrome Save As prompts; Python saves images automatically.
+
 const LOCAL_STORAGE_KEYS = Object.freeze({
   lastElementHtml: 'lastElementHtml',
   lastInlineStyle: 'lastInlineStyle',
@@ -11,8 +13,60 @@ const LOCAL_STORAGE_KEYS = Object.freeze({
   lastPythonResponse: 'lastPythonResponse',
   lastPythonError: 'lastPythonError',
   lastPythonProcessedAt: 'lastPythonProcessedAt',
-  savedInputValue: 'savedInputValue'
+  lastScreenshotPath: 'lastScreenshotPath',
+  lastScreenshotSavedAt: 'lastScreenshotSavedAt',
+  lastScreenshotError: 'lastScreenshotError'
 });
+
+
+const REMOVED_FRAME_ERROR_PATTERN = /Frame with ID \d+ was removed|No frame with id|Receiving end does not exist/i;
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRemovedFrameError(error) {
+  return REMOVED_FRAME_ERROR_PATTERN.test(String(error?.message || error || ''));
+}
+
+function isInjectableTab(tab) {
+  return Boolean(tab?.id && /^https?:\/\//i.test(String(tab.url || '')) && !tab.discarded);
+}
+
+async function executePageScript(tabId, injection, options = {}) {
+  const attempts = Number(options.attempts || 3);
+  const retryDelayMs = Number(options.retryDelayMs || 500);
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      if (!isInjectableTab(tab)) {
+        return { ok: false, reason: 'This tab cannot be inspected. Open an http or https page first.' };
+      }
+
+      if (tab.status === 'loading') {
+        await delay(retryDelayMs);
+        continue;
+      }
+
+      const frames = await chrome.scripting.executeScript({
+        ...injection,
+        target: { tabId }
+      });
+
+      return { ok: true, frames };
+    } catch (error) {
+      if (isRemovedFrameError(error) && attempt < attempts) {
+        await delay(retryDelayMs);
+        continue;
+      }
+
+      return { ok: false, reason: error?.message || String(error), error };
+    }
+  }
+
+  return { ok: false, reason: 'The page was still changing, so the frame could not be inspected.' };
+}
 
 const elements = {
   activeUrl: document.querySelector('#activeUrl'),
@@ -23,17 +77,13 @@ const elements = {
   targetValue: document.querySelector('#targetValue'),
   sourceTextarea: document.querySelector('#sourceTextarea'),
   pythonResponseTextarea: document.querySelector('#pythonResponseTextarea'),
-  savedInput: document.querySelector('#savedInput'),
   status: document.querySelector('#status')
 };
 
 elements.refreshButton.addEventListener('click', renderElementSourceForActiveTab);
 elements.copyButton.addEventListener('click', copySource);
 elements.optionsButton.addEventListener('click', () => chrome.runtime.openOptionsPage());
-elements.savedInput.addEventListener('input', saveCustomInput);
-
 document.addEventListener('DOMContentLoaded', async () => {
-  await loadSavedCustomInput();
   await loadStoredPythonResponse();
   await renderElementSourceForActiveTab();
 });
@@ -41,9 +91,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== 'local') return;
 
-  if (changes.lastPythonResponse || changes.lastPythonError || changes.lastPythonProcessedAt) {
-    loadStoredPythonResponse().catch(console.error);
-    fillSavedInputOnActiveTab().catch(console.error);
+  if (changes.lastPythonResponse || changes.lastPythonError || changes.lastPythonProcessedAt || changes.lastScreenshotPath || changes.lastScreenshotError) {
+    loadStoredPythonResponse().catch((error) => console.warn('URL Guard popup: response load failed.', error?.message || error));
   }
 });
 
@@ -70,7 +119,7 @@ async function renderElementSourceForActiveTab() {
     elements.activeUrl.textContent = tab.url || 'Unknown';
 
     if (!matchesConfiguredRule(tab.url, config.urlRule)) {
-      setStatus('This tab does not match the configured URL rule.');
+      setStatus('This tab does not match the configured target URL.');
       return;
     }
 
@@ -93,121 +142,40 @@ async function renderElementSourceForActiveTab() {
   }
 }
 
-async function loadSavedCustomInput() {
-  const state = await chrome.storage.local.get({
-    [LOCAL_STORAGE_KEYS.savedInputValue]: ''
-  });
-
-  elements.savedInput.value = state[LOCAL_STORAGE_KEYS.savedInputValue] || '';
-}
-
-async function saveCustomInput() {
-  const inputName = elements.savedInput.value.trim();
-
-  await chrome.storage.local.set({
-    [LOCAL_STORAGE_KEYS.savedInputValue]: inputName
-  });
-
-  if (inputName) {
-    await fillSavedInputOnActiveTab();
-  }
-}
-
-async function fillSavedInputOnActiveTab() {
-  try {
-    const state = await chrome.storage.local.get({
-      [LOCAL_STORAGE_KEYS.savedInputValue]: '',
-      [LOCAL_STORAGE_KEYS.lastPythonResponse]: ''
-    });
-    const inputName = String(state[LOCAL_STORAGE_KEYS.savedInputValue] || '').trim();
-    const pythonValue = extractPythonResponseValue(state[LOCAL_STORAGE_KEYS.lastPythonResponse]);
-
-    if (!inputName || !pythonValue) return;
-
-    const tab = await getActiveTab();
-
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      args: [inputName, pythonValue],
-      func: (targetInputName, valueToWrite) => {
-        const input = Array.from(document.getElementsByName(targetInputName))
-          .find((element) => element instanceof HTMLInputElement);
-
-        if (!input) {
-          return { ok: false, reason: `No input found with name=\"${targetInputName}\".` };
-        }
-
-        input.focus();
-        input.value = valueToWrite;
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-        input.dispatchEvent(new Event('change', { bubbles: true }));
-
-        return { ok: true };
-      }
-    });
-  } catch (error) {
-    console.warn('Could not fill the live page input.', error);
-  }
-}
-
-
-
-function extractPythonResponseValue(rawResponse) {
-  if (!rawResponse) return '';
-
-  if (typeof rawResponse !== 'string') {
-    return extractPythonResponseValueFromObject(rawResponse);
-  }
-
-  const trimmed = rawResponse.trim();
-  if (!trimmed) return '';
-
-  try {
-    return extractPythonResponseValueFromObject(JSON.parse(trimmed));
-  } catch {
-    return trimmed;
-  }
-}
-
-function extractPythonResponseValueFromObject(response) {
-  if (response == null) return '';
-
-  if (typeof response === 'string' || typeof response === 'number' || typeof response === 'boolean') {
-    return String(response);
-  }
-
-  const preferredKeys = ['decodedText', 'value', 'text', 'result', 'output', 'message'];
-  for (const key of preferredKeys) {
-    if (response[key] != null && String(response[key]).trim()) {
-      return String(response[key]).trim();
-    }
-  }
-
-  try {
-    return JSON.stringify(response, null, 2).trim();
-  } catch {
-    return String(response).trim();
-  }
-}
-
 async function loadStoredPythonResponse() {
   const state = await chrome.storage.local.get({
     [LOCAL_STORAGE_KEYS.lastPythonResponse]: '',
     [LOCAL_STORAGE_KEYS.lastPythonError]: '',
     [LOCAL_STORAGE_KEYS.lastPythonProcessedAt]: '',
-    [LOCAL_STORAGE_KEYS.lastDownloadedFilename]: ''
+    [LOCAL_STORAGE_KEYS.lastDownloadedFilename]: '',
+    [LOCAL_STORAGE_KEYS.lastScreenshotPath]: '',
+    [LOCAL_STORAGE_KEYS.lastScreenshotSavedAt]: '',
+    [LOCAL_STORAGE_KEYS.lastScreenshotError]: ''
   });
 
   const response = state[LOCAL_STORAGE_KEYS.lastPythonResponse];
   const error = state[LOCAL_STORAGE_KEYS.lastPythonError];
   const processedAt = state[LOCAL_STORAGE_KEYS.lastPythonProcessedAt];
   const filename = state[LOCAL_STORAGE_KEYS.lastDownloadedFilename];
+  const screenshotPath = state[LOCAL_STORAGE_KEYS.lastScreenshotPath];
+  const screenshotSavedAt = state[LOCAL_STORAGE_KEYS.lastScreenshotSavedAt];
+  const screenshotError = state[LOCAL_STORAGE_KEYS.lastScreenshotError];
 
   if (response) {
     elements.pythonResponseTextarea.value = [
       processedAt ? `Processed at: ${processedAt}` : '',
       filename ? `Image path: ${filename}` : '',
+      screenshotPath ? `Last screenshot path: ${screenshotPath}` : '',
       response
+    ].filter(Boolean).join('\n\n');
+    return;
+  }
+
+  if (screenshotPath || screenshotError) {
+    elements.pythonResponseTextarea.value = [
+      screenshotSavedAt ? `Screenshot saved at: ${screenshotSavedAt}` : '',
+      screenshotPath ? `Screenshot path: ${screenshotPath}` : '',
+      screenshotError ? `Screenshot error: ${screenshotError}` : ''
     ].filter(Boolean).join('\n\n');
     return;
   }
@@ -230,20 +198,32 @@ async function getActiveTab() {
     throw new Error('No active tab found.');
   }
 
+  if (!isInjectableTab(tab)) {
+    throw new Error('Open the configured http/https target page before using the popup. Chrome internal pages cannot be inspected.');
+  }
+
   return tab;
 }
 
 async function getTargetElementSource(tabId, formId, elementSelector) {
-  const [{ result } = {}] = await chrome.scripting.executeScript({
-    target: { tabId },
+  const injection = await executePageScript(tabId, {
     args: [formId, elementSelector],
     func: (configuredFormId, configuredElementSelector) => {
       const form = document.getElementById(configuredFormId);
 
       if (!form) {
+        const reason = `No form found with id "${configuredFormId}".`;
+
+        try {
+          console.log(`URL Guard: form id "${configuredFormId}" was not found on this page. Please check the Form ID saved in extension options.`);
+        } catch (error) {
+          console.warn(reason, error);
+        }
+
         return {
           ok: false,
-          reason: `No form found with id "${configuredFormId}".`
+          reason,
+          formMissing: true
         };
       }
 
@@ -300,6 +280,12 @@ async function getTargetElementSource(tabId, formId, elementSelector) {
     }
   });
 
+  if (!injection.ok) {
+    console.warn('URL Guard popup: page inspection skipped.', injection.reason);
+    return { ok: false, reason: injection.reason };
+  }
+
+  const [{ result } = {}] = injection.frames || [];
   return result || { ok: false, reason: 'No result returned from the active page.' };
 }
 
@@ -340,6 +326,10 @@ async function saveExtractedBackgroundImage(result) {
 }
 
 async function downloadBackgroundImage(imageUrl, mimeType) {
+  if (!USE_CHROME_DOWNLOADS) {
+    return null;
+  }
+
   if (!isDownloadableImageUrl(imageUrl)) {
     return null;
   }
@@ -388,10 +378,10 @@ function buildStatusMessage(result, saveResult) {
   }
 
   if (saveResult.downloaded) {
-    return `Loaded ${htmlSize} characters. Background image saved and downloaded automatically.`;
+    return `Loaded ${htmlSize} characters. Background image saved automatically by Python without a Save As prompt.`;
   }
 
-  return `Loaded ${htmlSize} characters. Background image URL saved in extension storage.`;
+  return `Loaded ${htmlSize} characters. Background image URL saved. Python will auto-save it during processing.`;
 }
 
 async function copySource() {

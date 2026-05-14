@@ -12,9 +12,11 @@
       <p class="description">The extension reads one configured element only when the active tab URL matches your safe URL rule.</p>
 
       <form id="optionsForm" novalidate>
-        <label for="urlRule">Allowed URL rule</label>
-        <input id="urlRule" name="urlRule" type="text" autocomplete="off" placeholder="https://example.com/*" required>
-        <p class="hint">Allowed: http(s) URLs and leading host wildcards, for example <code>https://*.example.com/orders/*</code>.</p>
+        <section class="field-section url-rule-section" aria-label="Allowed target URL">
+          <label for="urlRule">Allowed target URL</label>
+          <input id="urlRule" name="urlRule" type="text" autocomplete="off" placeholder="https://domain/page1/var1/var2.do" required>
+          <p class="hint">Enter the single page URL where the extension should run. GET/query parameters are ignored, so <code>https://domain/page1/var1/var2.do</code> also matches <code>https://domain/page1/var1/var2.do?locationCode=kara&amp;realmId=1116</code>.</p>
+        </section>
 
         <label for="formId">Form ID</label>
         <input id="formId" name="formId" type="text" autocomplete="off" placeholder="checkoutForm" required>
@@ -23,6 +25,18 @@
         <label for="elementSelector">HTML tag or selector inside the form</label>
         <input id="elementSelector" name="elementSelector" type="text" autocomplete="off" placeholder="input[name=&quot;email&quot;]" required>
         <p class="hint">Examples: <code>input</code>, <code>textarea</code>, <code>select[name=&quot;country&quot;]</code>, <code>button[type=&quot;submit&quot;]</code>.</p>
+
+        <section class="field-section saved-input-group" aria-label="Saved custom input">
+          <label for="savedInput">Input name or ID to fill</label>
+          <input id="savedInput" name="savedInput" type="text" autocomplete="off" placeholder="Example: savedInput">
+          <p class="hint">Saves automatically. When Python returns a value, the extension fills the matching page input by its <code>id</code> or <code>name</code> attribute.</p>
+        </section>
+
+        <section class="field-section click-input-group" aria-label="Live page input to click">
+          <label for="clickInputSelector">Input name, ID, or selector to click</label>
+          <input id="clickInputSelector" name="clickInputSelector" type="text" autocomplete="off" placeholder="Example: savedInput">
+          <p class="hint">Saves automatically. After Python returns a value, the extension finds this live page input by <code>id</code>, <code>name</code>, or CSS selector and clicks it.</p>
+        </section>
 
         <div class="actions">
           <button class="primary-button" type="submit">Save</button>

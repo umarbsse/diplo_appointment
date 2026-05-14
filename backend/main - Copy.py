@@ -86,37 +86,8 @@ def read_local_image_path(image_path):
     mime_type = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
     return image_bytes, mime_type, str(path)
 
+
 def get_public_image_dir():
-    """
-    Pick a public, user-visible folder without asking the browser user to choose a path.
-    Screenshots/images are saved to the custom folder below.
-    """
-    override = r"F:\projects\Google Chrome\diplo_appoino\images\screenshots"
-    candidates = []
-
-    if override:
-        candidates.append(Path(override).expanduser())
-
-    home = Path.home()
-    candidates.extend([
-        home / "Downloads" / "url-guard-auto",
-        home / "Pictures" / "url-guard-auto",
-        Path(tempfile.gettempdir()) / "url-guard-auto"
-    ])
-
-    for candidate in candidates:
-        try:
-            candidate.mkdir(parents=True, exist_ok=True)
-            test_file = candidate / ".write-test"
-            test_file.write_text("ok", encoding="utf-8")
-            test_file.unlink(missing_ok=True)
-            return candidate
-        except Exception:
-            continue
-
-    raise RuntimeError("Could not create a writable public image folder.")
-
-def get_public_image_dir_old():
     """
     Pick a public, user-visible folder without asking the browser user to choose a path.
     You can override it by setting URL_GUARD_IMAGE_DIR in the native host environment.
@@ -194,28 +165,12 @@ def solve_with_ddddocr_bytes(image_bytes):
         return ocr.classification(image_bytes)
 
 
-def keep_only_alphanumeric(value):
-    """
-    Keep only A-Z, a-z, and 0-9.
-
-    Examples:
-    "A B-12_$x!" -> "AB12x"
-    "ab@12#CD" -> "ab12CD"
-    """
-    return re.sub(r"[^A-Za-z0-9]", "", str(value or ""))
-
-
 def process_message(message):
     event = str(message.get("event") or "").strip()
     image_bytes, mime_type, source = load_image_bytes(message)
 
     if event == "save_screenshot" or message.get("skipOcr") is True:
-        saved_image_path = save_image_bytes(
-            image_bytes,
-            mime_type,
-            "missing-form-screenshot"
-        )
-
+        saved_image_path = save_image_bytes(image_bytes, mime_type, "missing-form-screenshot")
         return {
             "ok": True,
             "event": "save_screenshot",
@@ -228,14 +183,11 @@ def process_message(message):
         }
 
     saved_image_path = save_image_bytes(image_bytes, mime_type)
-
-    raw_decoded_text = solve_with_ddddocr_bytes(image_bytes).strip()
-    decoded_text = keep_only_alphanumeric(raw_decoded_text)
+    decoded_text = solve_with_ddddocr_bytes(image_bytes).strip()
 
     return {
         "ok": True,
         "decodedText": decoded_text,
-        "rawDecodedText": raw_decoded_text,
         "savedImagePath": saved_image_path,
         "source": source,
         "mimeType": mime_type,

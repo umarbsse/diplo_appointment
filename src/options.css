@@ -70,6 +70,17 @@ label {
   font-weight: 650;
 }
 
+.field-section {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.saved-input-group {
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
+}
+
 input {
   width: 100%;
   padding: 12px 14px;
@@ -119,4 +130,33 @@ button {
 
 .message[data-tone="success"] {
   color: var(--success);
+}
+
+.url-rules-section {
+  padding-bottom: 8px;
+}
+
+.section-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.url-rules-list {
+  display: grid;
+  gap: 8px;
+}
+
+.url-rule-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.small-button,
+.remove-url-button {
+  padding: 8px 10px;
+  white-space: nowrap;
 }

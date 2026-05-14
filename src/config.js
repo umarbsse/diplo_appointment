@@ -1,18 +1,21 @@
 export const STORAGE_KEYS = Object.freeze({
   urlRule: 'urlRule',
+  urlRules: 'urlRules',
   formId: 'formId',
   elementSelector: 'elementSelector'
 });
 
 export const DEFAULT_CONFIG = Object.freeze({
   urlRule: '',
+  urlRules: [],
   formId: '',
   elementSelector: ''
 });
 
 export const URL_RULE_HELP = [
-  'Use an http(s) URL or wildcard pattern.',
-  'Examples: https://example.com/*, https://*.example.com/orders/*, https://app.example.com/dashboard'
+  'Use one http(s) URL or wildcard pattern.',
+  'The extension only runs on this single configured page.',
+  'Query strings and hash fragments are ignored, so a saved .do URL also matches the same .do URL with GET parameters.'
 ].join(' ');
 
 export const SELECTOR_HELP = [
@@ -29,17 +32,24 @@ const MAX_SELECTOR_LENGTH = 180;
 
 export async function getConfig() {
   const result = await chrome.storage.sync.get(DEFAULT_CONFIG);
+  const savedUrlRule = normalizeText(result[STORAGE_KEYS.urlRule]);
+  const legacyUrlRules = normalizeUrlRules(result[STORAGE_KEYS.urlRules]);
+  const effectiveUrlRule = savedUrlRule || legacyUrlRules[0] || '';
 
   return {
-    urlRule: normalizeText(result[STORAGE_KEYS.urlRule]),
+    urlRule: effectiveUrlRule,
+    // Kept for backward compatibility with older code paths. Only the first URL is used.
+    urlRules: effectiveUrlRule ? [effectiveUrlRule] : [],
     formId: normalizeText(result[STORAGE_KEYS.formId]),
     elementSelector: normalizeText(result[STORAGE_KEYS.elementSelector])
   };
 }
 
 export async function setConfig(nextConfig) {
+  const urlRule = normalizeText(nextConfig?.urlRule ?? normalizeUrlRules(nextConfig?.urlRules)[0]);
   const config = {
-    urlRule: normalizeText(nextConfig?.urlRule),
+    urlRule,
+    urlRules: urlRule ? [urlRule] : [],
     formId: normalizeText(nextConfig?.formId),
     elementSelector: normalizeText(nextConfig?.elementSelector)
   };
@@ -49,7 +59,13 @@ export async function setConfig(nextConfig) {
     throw new Error(validation.reason);
   }
 
-  await chrome.storage.sync.set(config);
+  await chrome.storage.sync.set({
+    [STORAGE_KEYS.urlRule]: config.urlRule,
+    [STORAGE_KEYS.urlRules]: config.urlRules,
+    [STORAGE_KEYS.formId]: config.formId,
+    [STORAGE_KEYS.elementSelector]: config.elementSelector
+  });
+
   return config;
 }
 
@@ -58,8 +74,8 @@ export async function clearConfig() {
 }
 
 export function validateConfig(config) {
-  const urlValidation = validateUrlRule(config?.urlRule);
-  if (!urlValidation.ok) return urlValidation;
+  const urlRuleValidation = validateUrlRule(config?.urlRule ?? normalizeUrlRules(config?.urlRules)[0]);
+  if (!urlRuleValidation.ok) return urlRuleValidation;
 
   const formValidation = validateFormId(config?.formId);
   if (!formValidation.ok) return formValidation;
@@ -72,6 +88,26 @@ export function validateConfig(config) {
 
 export function normalizeText(value) {
   return String(value ?? '').trim();
+}
+
+export function normalizeUrlRules(value) {
+  const values = Array.isArray(value) ? value : [value];
+  const seen = new Set();
+  const rules = [];
+
+  for (const item of values) {
+    const rule = normalizeText(item);
+    if (!rule || seen.has(rule)) continue;
+    seen.add(rule);
+    rules.push(rule);
+  }
+
+  return rules;
+}
+
+export function validateUrlRules(rules) {
+  const firstRule = normalizeUrlRules(rules)[0] || '';
+  return validateUrlRule(firstRule);
 }
 
 export function validateUrlRule(rule) {
@@ -157,7 +193,22 @@ export function validateElementSelector(selector) {
   return { ok: true };
 }
 
-export function matchesConfiguredRule(candidateUrl, rule) {
+export function matchesConfiguredRule(candidateUrl, ruleOrRules) {
+  const rule = Array.isArray(ruleOrRules) ? normalizeUrlRules(ruleOrRules)[0] : normalizeText(ruleOrRules);
+  if (!candidateUrl || !rule) return false;
+
+  return matchesSingleConfiguredRule(candidateUrl, rule);
+}
+
+export function toDisplaySelector(formId, elementSelector) {
+  return `#${formId} ${elementSelector}`;
+}
+
+export function isPlainHtmlTag(selector) {
+  return ALLOWED_TAG_PATTERN.test(normalizeText(selector));
+}
+
+function matchesSingleConfiguredRule(candidateUrl, rule) {
   const normalizedRule = normalizeText(rule);
   const validation = validateUrlRule(normalizedRule);
 
@@ -182,15 +233,7 @@ export function matchesConfiguredRule(candidateUrl, rule) {
     return false;
   }
 
-  return matchesHost(url.hostname, hostPattern) && matchesPath(url.pathname + url.search + url.hash, pathPattern);
-}
-
-export function toDisplaySelector(formId, elementSelector) {
-  return `#${formId} ${elementSelector}`;
-}
-
-export function isPlainHtmlTag(selector) {
-  return ALLOWED_TAG_PATTERN.test(normalizeText(selector));
+  return matchesHost(url.hostname, hostPattern) && matchesPath(url.pathname, stripQueryAndHash(pathPattern));
 }
 
 function isSafeHostPattern(hostPattern) {
@@ -230,7 +273,11 @@ function matchesHost(hostname, hostPattern) {
 }
 
 function matchesPath(candidatePath, pathPattern) {
-  return wildcardToRegExp(pathPattern).test(candidatePath || '/');
+  return wildcardToRegExp(pathPattern).test(stripQueryAndHash(candidatePath || '/'));
+}
+
+function stripQueryAndHash(pathValue) {
+  return String(pathValue || '/').split(/[?#]/)[0] || '/';
 }
 
 function wildcardToRegExp(pattern) {
