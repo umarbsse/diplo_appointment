@@ -20,6 +20,7 @@ const LOCAL_STORAGE_KEYS = Object.freeze({
   lastScreenshotPath: 'lastScreenshotPath',
   lastScreenshotSavedAt: 'lastScreenshotSavedAt',
   lastScreenshotError: 'lastScreenshotError',
+  lastPageSourceLogPath: 'lastPageSourceLogPath',
   lastMissingFormScreenshotKey: 'lastMissingFormScreenshotKey'
 });
 
@@ -432,7 +433,8 @@ async function handleExtractionFailure({ tabId, tabUrl, config, result }) {
   await chrome.storage.local.set({
     [LOCAL_STORAGE_KEYS.lastFormLookupError]: reason,
     [LOCAL_STORAGE_KEYS.lastScreenshotPath]: '',
-    [LOCAL_STORAGE_KEYS.lastScreenshotError]: ''
+    [LOCAL_STORAGE_KEYS.lastScreenshotError]: '',
+    [LOCAL_STORAGE_KEYS.lastPageSourceLogPath]: ''
   });
 
   if (result?.formMissing) {
@@ -449,7 +451,8 @@ async function handleExtractionFailure({ tabId, tabUrl, config, result }) {
       tabUrl,
       formId: config.formId,
       reason,
-      screenshotKey
+      screenshotKey,
+      pageSource: result?.pageSource || ''
     });
     return;
   }
@@ -474,7 +477,7 @@ function stripUrlQueryAndHash(url) {
   }
 }
 
-async function captureAndSaveMissingFormScreenshot({ tabId, tabUrl, formId, reason, screenshotKey }) {
+async function captureAndSaveMissingFormScreenshot({ tabId, tabUrl, formId, reason, screenshotKey, pageSource }) {
   const savedAt = new Date().toISOString();
   const message = `URL Guard: form id "${formId}" was not found on this page. Page: ${tabUrl}. Please check the Form ID saved in extension options.`;
 
@@ -489,6 +492,7 @@ async function captureAndSaveMissingFormScreenshot({ tabId, tabUrl, formId, reas
       formId,
       reason,
       message,
+      pageSource: pageSource || '',
       createdAt: savedAt
     });
 
@@ -501,6 +505,7 @@ async function captureAndSaveMissingFormScreenshot({ tabId, tabUrl, formId, reas
       [LOCAL_STORAGE_KEYS.lastScreenshotPath]: firstScreenshotPath || '',
       [LOCAL_STORAGE_KEYS.lastScreenshotSavedAt]: savedAt,
       [LOCAL_STORAGE_KEYS.lastScreenshotError]: response?.ok === false ? (response?.error || displayResponse) : '',
+      [LOCAL_STORAGE_KEYS.lastPageSourceLogPath]: response?.pageSourceLogPath || '',
       [LOCAL_STORAGE_KEYS.lastDownloadedFilename]: firstScreenshotPath || '',
       [LOCAL_STORAGE_KEYS.lastSavedAt]: savedAt,
       ...(didSave ? { [LOCAL_STORAGE_KEYS.lastMissingFormScreenshotKey]: screenshotKey } : {})
@@ -524,7 +529,8 @@ async function captureAndSaveMissingFormScreenshot({ tabId, tabUrl, formId, reas
     await chrome.storage.local.set({
       [LOCAL_STORAGE_KEYS.lastScreenshotPath]: '',
       [LOCAL_STORAGE_KEYS.lastScreenshotSavedAt]: savedAt,
-      [LOCAL_STORAGE_KEYS.lastScreenshotError]: errorMessage
+      [LOCAL_STORAGE_KEYS.lastScreenshotError]: errorMessage,
+      [LOCAL_STORAGE_KEYS.lastPageSourceLogPath]: ''
     });
     console.warn('URL Guard: could not call Python screenshot script.', error);
   }
@@ -586,7 +592,8 @@ function extractBackgroundImageFromConfiguredElement(configuredFormId, configure
         reason: `No form found with id "${formId}".`,
         formMissing: true,
         formId,
-        pageUrl: window.location.href
+        pageUrl: window.location.href,
+        pageSource: document.documentElement ? document.documentElement.outerHTML : ''
       };
     }
 

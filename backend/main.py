@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.request import Request, urlopen
 
+from bs4 import BeautifulSoup
 from screenshot import take_screenshots
 
 
@@ -88,6 +89,7 @@ def read_local_image_path(image_path):
     mime_type = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
     return image_bytes, mime_type, str(path)
 
+
 def get_public_image_dir():
     """
     Pick a public, user-visible folder without asking the browser user to choose a path.
@@ -118,6 +120,7 @@ def get_public_image_dir():
 
     raise RuntimeError("Could not create a writable public image folder.")
 
+
 def get_public_image_dir_old():
     """
     Pick a public, user-visible folder without asking the browser user to choose a path.
@@ -147,6 +150,73 @@ def get_public_image_dir_old():
             continue
 
     raise RuntimeError("Could not create a writable public image folder.")
+
+
+def get_project_root():
+    return Path(__file__).resolve().parents[1]
+
+
+def get_log_dir():
+    """Return the project log folder and create it when needed."""
+    log_dir = get_project_root() / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir
+
+
+def clean_page_source(page_source):
+    """
+    Clean page source before logging.
+
+    Keeps only the inner HTML inside <body>.
+    Removes the complete <div id="header">...</div> block,
+    including all nested tags and content.
+    """
+    if not page_source:
+        return ""
+
+    soup = BeautifulSoup(str(page_source), "html.parser")
+
+    body = soup.body
+
+    if body:
+        header = body.find("div", id="header")
+        if header:
+            header.decompose()
+
+        return body.decode_contents().strip()
+
+    header = soup.find("div", id="header")
+    if header:
+        header.decompose()
+
+    return str(soup).strip()
+
+
+def append_page_source_log(page_source):
+    """Append cleaned body HTML to logs/page_source.log."""
+    cleaned_html = clean_page_source(page_source)
+
+    if not cleaned_html:
+        return ""
+
+    log_file = get_log_dir() / "page_source.log"
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    with log_file.open("a", encoding="utf-8", newline="\n") as log:
+        log.write("----------------------------------------------------------------\n")
+        log.write(f"-------------Page Source Start at {timestamp}---------------------\n")
+        log.write("----------------------------------------------------------------\n\n")
+
+        log.write(cleaned_html)
+
+        if not cleaned_html.endswith("\n"):
+            log.write("\n")
+
+        log.write("\n----------------------------------------------------------------\n")
+        log.write(f"-------------Page Source End at {timestamp}-----------------------\n")
+        log.write("----------------------------------------------------------------\n\n")
+
+    return str(log_file.resolve())
 
 
 def extension_from_mime_type(mime_type):
@@ -214,18 +284,22 @@ def process_message(message):
         form_id = str(message.get("formId") or "").strip()
         page_url = str(message.get("pageUrl") or "").strip()
         log_message = str(message.get("message") or "").strip()
+        page_source = str(message.get("pageSource") or "")
 
         saved_paths = take_screenshots()
+        page_source_log_path = append_page_source_log(page_source)
 
         return {
             "ok": True,
             "event": "missing_form",
-            "message": "Screenshots captured successfully.",
+            "message": "Screenshots captured successfully and cleaned page source was logged.",
             "formId": form_id,
             "pageUrl": page_url,
             "logMessage": log_message,
             "savedPaths": saved_paths,
             "savedImagePath": saved_paths[0] if saved_paths else "",
+            "pageSourceLogPath": page_source_log_path,
+            "pageSourceBytes": len(page_source.encode("utf-8")),
             "count": len(saved_paths),
             "processedAt": datetime.now(timezone.utc).isoformat()
         }
