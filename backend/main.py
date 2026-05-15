@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.request import Request, urlopen
 
+from screenshot import take_screenshots
+
 
 class SilenceStdout:
     """
@@ -207,6 +209,27 @@ def keep_only_alphanumeric(value):
 
 def process_message(message):
     event = str(message.get("event") or "").strip()
+
+    if event == "missing_form":
+        form_id = str(message.get("formId") or "").strip()
+        page_url = str(message.get("pageUrl") or "").strip()
+        log_message = str(message.get("message") or "").strip()
+
+        saved_paths = take_screenshots()
+
+        return {
+            "ok": True,
+            "event": "missing_form",
+            "message": "Screenshots captured successfully.",
+            "formId": form_id,
+            "pageUrl": page_url,
+            "logMessage": log_message,
+            "savedPaths": saved_paths,
+            "savedImagePath": saved_paths[0] if saved_paths else "",
+            "count": len(saved_paths),
+            "processedAt": datetime.now(timezone.utc).isoformat()
+        }
+
     image_bytes, mime_type, source = load_image_bytes(message)
 
     if event == "save_screenshot" or message.get("skipOcr") is True:

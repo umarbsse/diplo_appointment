@@ -135,7 +135,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     refreshActionForActiveTab().catch((error) => console.warn('URL Guard: refresh failed.', error?.message || error));
   }
 
-  if (areaName === 'local' && (changes.savedInputValue?.newValue || changes.clickInputSelector?.newValue || changes.lastPythonResponse?.newValue)) {
+  if (areaName === 'local' && (changes.savedInputValue?.newValue || changes.clickInputSelector?.newValue)) {
     handleLivePageInputsOnActiveTab().catch((error) => console.warn('URL Guard: live page input handling failed.', error?.message || error));
   }
 });
@@ -476,74 +476,57 @@ function stripUrlQueryAndHash(url) {
 
 async function captureAndSaveMissingFormScreenshot({ tabId, tabUrl, formId, reason, screenshotKey }) {
   const savedAt = new Date().toISOString();
+  const message = `URL Guard: form id "${formId}" was not found on this page. Page: ${tabUrl}. Please check the Form ID saved in extension options.`;
 
   try {
-    console.log('URL Guard: captureVisibleTab starting.', { tabId, tabUrl, formId });
-    await logToPageConsole(tabId, 'URL Guard: captureVisibleTab starting.');
-
-    const tab = await getUsableTab(tabId);
-    if (!tab) {
-      throw new Error(`Cannot capture screenshot because tab ${tabId} is no longer available.`);
-    }
-
-    console.log('URL Guard: captureVisibleTab window id:', tab.windowId);
-    const screenshotDataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
-
-    console.log(`URL Guard: screenshot captured. Data URL length: ${screenshotDataUrl.length}. Sending to native host for save only.`);
-    await logToPageConsole(tabId, `URL Guard: screenshot captured. Sending to native host for save only. Data URL length: ${screenshotDataUrl.length}.`);
+    console.warn(message);
 
     const response = await chrome.runtime.sendNativeMessage(NATIVE_HOST_NAME, {
-      event: 'save_screenshot',
+      event: 'missing_form',
       savedAt,
       tabUrl,
+      pageUrl: tabUrl,
       formId,
       reason,
-      imageUrl: screenshotDataUrl,
-      mimeType: 'image/png',
-      skipOcr: true
+      message,
+      createdAt: savedAt
     });
 
-    const screenshotPath = extractSavedImagePath(response);
+    const savedPaths = Array.isArray(response?.savedPaths) ? response.savedPaths : [];
+    const firstScreenshotPath = savedPaths[0] || extractSavedImagePath(response);
     const displayResponse = stringifyForDisplay(response);
-    const didSave = response?.ok !== false && Boolean(screenshotPath);
+    const didSave = response?.ok !== false && Boolean(firstScreenshotPath);
 
     await chrome.storage.local.set({
-      [LOCAL_STORAGE_KEYS.lastScreenshotPath]: screenshotPath,
+      [LOCAL_STORAGE_KEYS.lastScreenshotPath]: firstScreenshotPath || '',
       [LOCAL_STORAGE_KEYS.lastScreenshotSavedAt]: savedAt,
       [LOCAL_STORAGE_KEYS.lastScreenshotError]: response?.ok === false ? (response?.error || displayResponse) : '',
-      [LOCAL_STORAGE_KEYS.lastDownloadedFilename]: screenshotPath || '',
+      [LOCAL_STORAGE_KEYS.lastDownloadedFilename]: firstScreenshotPath || '',
       [LOCAL_STORAGE_KEYS.lastSavedAt]: savedAt,
       ...(didSave ? { [LOCAL_STORAGE_KEYS.lastMissingFormScreenshotKey]: screenshotKey } : {})
     });
 
-    console.log('URL Guard: native host screenshot save response:', response);
+    console.log('URL Guard: Python missing_form response:', response);
 
     if (response?.ok === false) {
-      const message = `URL Guard: screenshot save failed: ${response?.error || displayResponse}`;
-      console.warn(message);
-      await logToPageConsole(tabId, message);
+      console.warn(`URL Guard: Python screenshot failed: ${response?.error || displayResponse}`);
       return;
     }
 
-    if (!screenshotPath) {
-      const message = 'URL Guard: screenshot save response did not include a savedImagePath. Check native host configuration.';
-      console.warn(message, response);
-      await logToPageConsole(tabId, message);
+    if (!firstScreenshotPath) {
+      console.warn('URL Guard: Python response did not include any screenshot path.', response);
       return;
     }
 
-    const successMessage = `URL Guard: screenshot saved automatically to: ${screenshotPath}`;
-    console.log(successMessage);
-    await logToPageConsole(tabId, successMessage);
+    console.log(`URL Guard: Python screenshot saved automatically to: ${firstScreenshotPath}`);
   } catch (error) {
-    const message = error?.message || 'Could not capture and save a screenshot after the form lookup failed.';
+    const errorMessage = error?.message || 'Could not call Python screenshot script after the form lookup failed.';
     await chrome.storage.local.set({
       [LOCAL_STORAGE_KEYS.lastScreenshotPath]: '',
       [LOCAL_STORAGE_KEYS.lastScreenshotSavedAt]: savedAt,
-      [LOCAL_STORAGE_KEYS.lastScreenshotError]: message
+      [LOCAL_STORAGE_KEYS.lastScreenshotError]: errorMessage
     });
-    console.warn('URL Guard: could not capture and save missing-form screenshot.', error);
-    await logToPageConsole(tabId, `URL Guard: screenshot failed: ${message}`);
+    console.warn('URL Guard: could not call Python screenshot script.', error);
   }
 }
 
