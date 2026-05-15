@@ -91,7 +91,7 @@ def get_public_image_dir():
     Pick a public, user-visible folder without asking the browser user to choose a path.
     Screenshots/images are saved to the custom folder below.
     """
-    override = r"F:\projects\Google Chrome\diplo_appoino\images\screenshots"
+    override = r"F:\projects\Google Chrome\diplo_appoino\images\ocr"
     candidates = []
 
     if override:
@@ -161,7 +161,7 @@ def extension_from_mime_type(mime_type):
     return mapping.get(str(mime_type or "").lower(), "img")
 
 
-def save_image_bytes(image_bytes, mime_type, filename_prefix="background-image"):
+def save_image_bytes(image_bytes, mime_type, filename_prefix="c"):
     public_dir = get_public_image_dir()
     extension = extension_from_mime_type(mime_type)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")

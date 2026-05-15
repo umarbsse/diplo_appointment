@@ -14,6 +14,7 @@ const LOCAL_STORAGE_KEYS = Object.freeze({
   lastAutoDownloadKey: 'lastAutoDownloadKey',
   savedInputValue: 'savedInputValue',
   clickInputSelector: 'clickInputSelector',
+  clickDelaySeconds: 'clickDelaySeconds',
   lastClickInputError: 'lastClickInputError',
   lastFormLookupError: 'lastFormLookupError',
   lastScreenshotPath: 'lastScreenshotPath',
@@ -25,11 +26,18 @@ const LOCAL_STORAGE_KEYS = Object.freeze({
 const pendingAutoScans = new Set();
 const NATIVE_HOST_NAME = 'com.url_guard.processor';
 const USE_CHROME_DOWNLOADS = false; // false avoids Chrome Save As prompts; Python saves the image automatically.
+const DEFAULT_CLICK_DELAY_SECONDS = 0;
 
 const REMOVED_FRAME_ERROR_PATTERN = /Frame with ID \d+ was removed|No frame with id|Receiving end does not exist/i;
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function normalizeClickDelaySeconds(value) {
+  const seconds = Number.parseInt(value, 10);
+  if (!Number.isFinite(seconds)) return DEFAULT_CLICK_DELAY_SECONDS;
+  return Math.max(0, seconds);
 }
 
 function isRemovedFrameError(error) {
@@ -198,12 +206,16 @@ async function fillSavedInputOnTab(tabId) {
 async function clickConfiguredInputOnTab(tabId) {
   const state = await chrome.storage.local.get({
     [LOCAL_STORAGE_KEYS.clickInputSelector]: '',
+    [LOCAL_STORAGE_KEYS.clickDelaySeconds]: DEFAULT_CLICK_DELAY_SECONDS,
     [LOCAL_STORAGE_KEYS.lastPythonResponse]: ''
   });
   const target = String(state[LOCAL_STORAGE_KEYS.clickInputSelector] || '').trim();
   const pythonValue = extractPythonResponseValue(state[LOCAL_STORAGE_KEYS.lastPythonResponse]);
 
   if (!target || !pythonValue) return;
+
+  const delaySeconds = normalizeClickDelaySeconds(state[LOCAL_STORAGE_KEYS.clickDelaySeconds]);
+  await delay(delaySeconds * 1000);
 
   try {
     const injection = await executePageScript(tabId, {
@@ -572,23 +584,12 @@ function extractBackgroundImageFromConfiguredElement(configuredFormId, configure
 
   function logMissingFormToConsole(formId, pageUrl) {
     const message = `URL Guard: form id "${formId}" was not found on this page. Page: ${pageUrl}. Please check the Form ID saved in extension options.`;
-
     try {
       console.warn(message);
     } catch (error) {
       // Keep this fallback so an unexpected console issue does not break the extension.
       try {
         console.log(message, error);
-      } catch (_) {}
-    }
-
-    try {
-      window.alert(message);
-    } catch (error) {
-      // Some pages may block alert dialogs. In that case, the console warning above
-      // still shows the missing saved Form ID message.
-      try {
-        console.warn('URL Guard: unable to show missing form alert.', error);
       } catch (_) {}
     }
   }

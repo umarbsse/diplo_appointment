@@ -12,7 +12,8 @@ import {
 
 const LOCAL_STORAGE_KEYS = Object.freeze({
   savedInputValue: 'savedInputValue',
-  clickInputSelector: 'clickInputSelector'
+  clickInputSelector: 'clickInputSelector',
+  clickDelaySeconds: 'clickDelaySeconds'
 });
 
 const form = document.querySelector('#optionsForm');
@@ -21,7 +22,8 @@ const inputs = {
   formId: document.querySelector('#formId'),
   elementSelector: document.querySelector('#elementSelector'),
   savedInput: document.querySelector('#savedInput'),
-  clickInputSelector: document.querySelector('#clickInputSelector')
+  clickInputSelector: document.querySelector('#clickInputSelector'),
+  clickDelaySeconds: document.querySelector('#clickDelaySeconds')
 };
 const clearButton = document.querySelector('#clearButton');
 const message = document.querySelector('#message');
@@ -32,6 +34,7 @@ clearButton.addEventListener('click', clearOptions);
   .forEach((input) => input.addEventListener('input', validateCurrentInput));
 inputs.savedInput.addEventListener('input', saveSavedInput);
 inputs.clickInputSelector.addEventListener('input', saveClickInputSelector);
+inputs.clickDelaySeconds.addEventListener('input', saveClickDelaySeconds);
 
 document.addEventListener('DOMContentLoaded', restoreOptions);
 
@@ -43,10 +46,12 @@ async function restoreOptions() {
 
   const state = await chrome.storage.local.get({
     [LOCAL_STORAGE_KEYS.savedInputValue]: '',
-    [LOCAL_STORAGE_KEYS.clickInputSelector]: ''
+    [LOCAL_STORAGE_KEYS.clickInputSelector]: '',
+    [LOCAL_STORAGE_KEYS.clickDelaySeconds]: 0
   });
   inputs.savedInput.value = state[LOCAL_STORAGE_KEYS.savedInputValue] || '';
   inputs.clickInputSelector.value = state[LOCAL_STORAGE_KEYS.clickInputSelector] || '';
+  inputs.clickDelaySeconds.value = normalizeClickDelaySeconds(state[LOCAL_STORAGE_KEYS.clickDelaySeconds]);
 
   setMessage(`${URL_RULE_HELP} ${SELECTOR_HELP}`);
 }
@@ -61,6 +66,7 @@ async function saveOptions(event) {
     inputs.elementSelector.value = savedConfig.elementSelector;
     await saveSavedInput();
     await saveClickInputSelector();
+    await saveClickDelaySeconds();
     setMessage('Options saved.', 'success');
   } catch (error) {
     setMessage(error.message, 'error');
@@ -74,9 +80,11 @@ async function clearOptions() {
   inputs.elementSelector.value = '';
   inputs.savedInput.value = '';
   inputs.clickInputSelector.value = '';
+  inputs.clickDelaySeconds.value = '0';
   await chrome.storage.local.remove([
     LOCAL_STORAGE_KEYS.savedInputValue,
-    LOCAL_STORAGE_KEYS.clickInputSelector
+    LOCAL_STORAGE_KEYS.clickInputSelector,
+    LOCAL_STORAGE_KEYS.clickDelaySeconds
   ]);
   setMessage('Options cleared.', 'success');
 }
@@ -91,6 +99,20 @@ async function saveClickInputSelector() {
   await chrome.storage.local.set({
     [LOCAL_STORAGE_KEYS.clickInputSelector]: inputs.clickInputSelector.value.trim()
   });
+}
+
+async function saveClickDelaySeconds() {
+  const delaySeconds = normalizeClickDelaySeconds(inputs.clickDelaySeconds.value);
+  inputs.clickDelaySeconds.value = delaySeconds;
+  await chrome.storage.local.set({
+    [LOCAL_STORAGE_KEYS.clickDelaySeconds]: delaySeconds
+  });
+}
+
+function normalizeClickDelaySeconds(value) {
+  const seconds = Number.parseInt(value, 10);
+  if (!Number.isFinite(seconds)) return 0;
+  return Math.max(0, seconds);
 }
 
 function validateCurrentInput() {

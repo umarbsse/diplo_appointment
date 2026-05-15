@@ -35,7 +35,13 @@
         <section class="field-section click-input-group" aria-label="Live page input to click">
           <label for="clickInputSelector">Input name, ID, or selector to click</label>
           <input id="clickInputSelector" name="clickInputSelector" type="text" autocomplete="off" placeholder="Example: savedInput">
-          <p class="hint">Saves automatically. After Python returns a value, the extension finds this live page input by <code>id</code>, <code>name</code>, or CSS selector and clicks it.</p>
+          <p class="hint">Saves automatically. After Python returns a value, the extension waits for the delay below, then finds this live page input by <code>id</code>, <code>name</code>, or CSS selector and clicks it.</p>
+        </section>
+
+        <section class="field-section click-delay-group" aria-label="Click delay seconds">
+          <label for="clickDelaySeconds">Delay before click, in seconds</label>
+          <input id="clickDelaySeconds" name="clickDelaySeconds" type="number" min="0" step="1" inputmode="numeric" placeholder="0">
+          <p class="hint">Use <code>0</code> for no delay. The saved value is used before the extension clicks.</p>
         </section>
 
         <div class="actions">
