@@ -15,7 +15,7 @@ export const DEFAULT_CONFIG = Object.freeze({
 export const URL_RULE_HELP = [
   'Use one http(s) URL or wildcard pattern.',
   'The extension only runs on this single configured page.',
-  'Query strings and hash fragments are ignored, so a saved .do URL also matches the same .do URL with GET parameters.'
+  'Query strings, hash fragments, and path session parameters such as ;jsessionid=... are ignored, so a saved .do URL also matches the same .do URL with GET parameters or a jsessionid.'
 ].join(' ');
 
 export const SELECTOR_HELP = [
@@ -233,7 +233,7 @@ function matchesSingleConfiguredRule(candidateUrl, rule) {
     return false;
   }
 
-  return matchesHost(url.hostname, hostPattern) && matchesPath(url.pathname, stripQueryAndHash(pathPattern));
+  return matchesHost(url.hostname, hostPattern) && matchesPath(url.pathname, normalizeComparablePath(pathPattern));
 }
 
 function isSafeHostPattern(hostPattern) {
@@ -273,11 +273,16 @@ function matchesHost(hostname, hostPattern) {
 }
 
 function matchesPath(candidatePath, pathPattern) {
-  return wildcardToRegExp(pathPattern).test(stripQueryAndHash(candidatePath || '/'));
+  return wildcardToRegExp(pathPattern).test(normalizeComparablePath(candidatePath || '/'));
 }
 
-function stripQueryAndHash(pathValue) {
-  return String(pathValue || '/').split(/[?#]/)[0] || '/';
+function normalizeComparablePath(pathValue) {
+  const pathOnly = String(pathValue || '/').split(/[?#]/)[0] || '/';
+
+  return pathOnly
+    .split('/')
+    .map((segment) => segment.split(';')[0])
+    .join('/') || '/';
 }
 
 function wildcardToRegExp(pattern) {

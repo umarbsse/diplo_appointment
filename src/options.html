@@ -15,7 +15,7 @@
         <section class="field-section url-rule-section" aria-label="Allowed target URL">
           <label for="urlRule">Allowed target URL</label>
           <input id="urlRule" name="urlRule" type="text" autocomplete="off" placeholder="https://domain/page1/var1/var2.do" required>
-          <p class="hint">Enter the single page URL where the extension should run. GET/query parameters are ignored, so <code>https://domain/page1/var1/var2.do</code> also matches <code>https://domain/page1/var1/var2.do?locationCode=kara&amp;realmId=1116</code>.</p>
+          <p class="hint">Enter the single page URL where the extension should run. GET/query parameters and path session parameters are ignored, so <code>https://domain/page1/var1/var2.do</code> also matches <code>https://domain/page1/var1/var2.do?locationCode=kara&amp;realmId=1116</code> and <code>https://domain/page1/var1/var2.do;jsessionid=58949BAA2BD7F308DCAF20B59428EFD9</code>.</p>
         </section>
 
         <label for="formId">Form ID</label>

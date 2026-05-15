@@ -524,6 +524,16 @@ async function captureAndSaveMissingFormScreenshot({ tabId, tabUrl, formId, reas
     }
 
     console.log(`URL Guard: Python screenshot saved automatically to: ${firstScreenshotPath}`);
+
+    const clickResult = await clickGoNextImageLinkIfTextFound(tabId, pageSource || '');
+
+    if (clickResult?.ok) {
+      console.log('URL Guard: go-next link clicked because target text was found.', clickResult);
+    } else if (clickResult?.skipped) {
+      console.log('URL Guard: go-next click skipped.', clickResult.reason);
+    } else {
+      console.warn('URL Guard: go-next click was attempted but failed.', clickResult);
+    }
   } catch (error) {
     const errorMessage = error?.message || 'Could not call Python screenshot script after the form lookup failed.';
     await chrome.storage.local.set({
@@ -534,6 +544,150 @@ async function captureAndSaveMissingFormScreenshot({ tabId, tabUrl, formId, reas
     });
     console.warn('URL Guard: could not call Python screenshot script.', error);
   }
+}
+
+async function clickGoNextImageLinkIfTextFound(tabId, pageSource, currentUrl) {
+  const targetText = 'Unfortunately, there are no';
+
+  if (!tabId || !String(pageSource || '').includes(targetText)) {
+    return {
+      ok: false,
+      skipped: true,
+      reason: 'Target text was not found in page source.'
+    };
+  }
+
+  const [result] = await chrome.scripting.executeScript({
+    target: { tabId },
+    args: [String(currentUrl || '')],
+    func: (liveUrl) => {
+      function normalizeUrlForCompare(value) {
+        const raw = String(value || '').trim();
+
+        if (!raw) {
+          return '';
+        }
+
+        try {
+          const url = new URL(raw, window.location.href);
+
+          const pathParts = url.pathname
+            .replace(/^\/+/, '')
+            .split('/')
+            .filter(Boolean);
+
+          let comparablePath = url.pathname.replace(/^\/+/, '');
+
+          const externIndex = pathParts.findIndex((part) => part.toLowerCase() === 'extern');
+          if (externIndex >= 0) {
+            comparablePath = pathParts.slice(externIndex).join('/');
+          }
+
+          const params = new URLSearchParams(url.search);
+          params.sort();
+
+          const query = params.toString();
+
+          return query ? `${comparablePath}?${query}` : comparablePath;
+        } catch (_) {
+          return raw.replace(/^https?:\/\/[^/]+\//i, '').replace(/^\/+/, '');
+        }
+      }
+
+      const currentComparableUrl = normalizeUrlForCompare(liveUrl || window.location.href);
+
+      const targetImg = Array.from(document.querySelectorAll('img')).find((img) => {
+        const src = img.getAttribute('src') || '';
+        return src.trim() === 'images/go-next.gif' || src.includes('images/go-next.gif');
+      });
+
+      if (!targetImg) {
+        return {
+          ok: false,
+          reason: 'Could not find img[src="images/go-next.gif"].'
+        };
+      }
+
+      const link = targetImg.closest('a');
+
+      if (!link) {
+        return {
+          ok: false,
+          reason: 'Found go-next image, but no parent <a> tag was found.'
+        };
+      }
+
+      const nextUrlCandidate =
+        link.getAttribute('href') ||
+        link.getAttribute('data-href') ||
+        link.getAttribute('data-url') ||
+        link.getAttribute('action') ||
+        '';
+
+      const onclick = link.getAttribute('onclick') || '';
+      const combinedCandidate = `${nextUrlCandidate} ${onclick}`;
+
+      const urlMatch = combinedCandidate.match(
+        /(?:https?:\/\/[^'"\s)]+|(?:\.{0,2}\/)?(?:[A-Za-z0-9_-]+\/)*extern\/[A-Za-z0-9_.-]+\.do\?[^'"\s)]+)/i
+      );
+
+      const nextComparableUrl = normalizeUrlForCompare(urlMatch ? urlMatch[0] : nextUrlCandidate);
+
+      if (nextComparableUrl && nextComparableUrl === currentComparableUrl) {
+        return {
+          ok: false,
+          skipped: true,
+          reason: 'Go-next link points to the same current page URL, so click was skipped.',
+          currentComparableUrl,
+          nextComparableUrl,
+          href: link.getAttribute('href') || '',
+          onclick
+        };
+      }
+
+      try {
+        link.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+          inline: 'center'
+        });
+      } catch (_) {
+        link.scrollIntoView();
+      }
+
+      const rect = link.getBoundingClientRect();
+      const clientX = rect.left + rect.width / 2;
+      const clientY = rect.top + rect.height / 2;
+
+      const mouseOptions = {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        clientX,
+        clientY
+      };
+
+      link.dispatchEvent(new MouseEvent('mouseover', mouseOptions));
+      link.dispatchEvent(new MouseEvent('mousedown', mouseOptions));
+      link.dispatchEvent(new MouseEvent('mouseup', mouseOptions));
+      link.dispatchEvent(new MouseEvent('click', mouseOptions));
+
+      return {
+        ok: true,
+        clicked: true,
+        href: link.getAttribute('href') || '',
+        onclick,
+        imageSrc: targetImg.getAttribute('src') || '',
+        currentComparableUrl,
+        nextComparableUrl
+      };
+    }
+  });
+
+  return result?.result || {
+    ok: false,
+    reason: 'No result returned from injected click script.'
+  };
 }
 
 async function logToPageConsole(tabId, message, data) {

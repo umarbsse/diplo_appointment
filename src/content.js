@@ -16,7 +16,7 @@
     try {
       const current = new URL(candidateUrl);
       const configured = new URL(rule);
-      const configuredPath = configured.pathname || '/';
+      const configuredPath = normalizeComparablePath(configured.pathname || '/');
 
       if (current.protocol.toLowerCase() !== configured.protocol.toLowerCase()) return false;
       if (current.hostname.toLowerCase() !== configured.hostname.toLowerCase()) return false;
@@ -25,10 +25,19 @@
         .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
         .replaceAll('*', '.*');
 
-      return new RegExp(`^${escapedPath}$`, 'i').test(current.pathname || '/');
+      return new RegExp(`^${escapedPath}$`, 'i').test(normalizeComparablePath(current.pathname || '/'));
     } catch {
       return false;
     }
+  }
+
+  function normalizeComparablePath(pathValue) {
+    const pathOnly = String(pathValue || '/').split(/[?#]/)[0] || '/';
+
+    return pathOnly
+      .split('/')
+      .map((segment) => segment.split(';')[0])
+      .join('/') || '/';
   }
 
   function normalizeUrlRules(value) {
